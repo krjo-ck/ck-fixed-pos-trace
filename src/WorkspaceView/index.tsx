@@ -1,11 +1,13 @@
-import { useCallback } from 'react';
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Krister Johansson. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+import { useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { useNumericRadix, useProjectData, useSessionData } from '@kvaser/canking-api/hooks';
-import { CanChannelSelectControl, CanIdentifierControl, canIdentifierType } from '@kvaser/canking-api/controls';
-import { sendCanMessage } from '@kvaser/canking-api/ipc';
-import { CanFrameFlag } from '@kvaser/canking-api/models';
-import { Box, Button } from '@mui/material';
-import icon from '../assets/icon.png';
+import { useFixedPositionModeMeasurementData, useNumericRadix, useProjectData } from '@kvaser/canking-api/hooks';
+import { CanChannelSelectControl } from '@kvaser/canking-api/controls';
+import { decimalToFixed, decimalToHex, Frame } from '@kvaser/canking-api/models';
+import { Box, Table, TableBody, TableCell, TableContainer, TableHead, TableRow } from '@mui/material';
 
 // If any data should be stored in the project file then add it to this interface
 interface IProjectData {
@@ -20,17 +22,12 @@ const defaultProjectData: IProjectData = {
 
 // If any data should be stored in the session data then add it to this interface
 // Session data will be persistent when the view is hidden, but it will not be saved to the project file
-interface ISessionData {
-  // This is an example showing how to store the selected CAN id to the session data
-  canId: number;
-  canIdType: canIdentifierType;
-}
+// interface ISessionData {
+// }
 
 // Define any default values for the project data that will be used when the component is created
-const defaultSessionData: ISessionData = {
-  canId: 0,
-  canIdType: 'standard',
-};
+// const defaultSessionData: ISessionData = {
+// };
 
 // This component is the component that will be loaded into the Workspace view
 function WorkspaceView() {
@@ -46,7 +43,18 @@ function WorkspaceView() {
   const { projectData, setProjectData } = useProjectData<IProjectData>(id, defaultProjectData);
 
   // Use the useSessionData hook to serialize/deserialize your view data to the session data
-  const { sessionData, setSessionData } = useSessionData<ISessionData>(id, defaultSessionData);
+  // const { sessionData, setSessionData } = useSessionData<ISessionData>(id, defaultSessionData);
+
+  // Use the useFixedPositionModeMeasurementData hook to get the latest measurement data
+  // for all messages/frames with an unique fixed position key (Id + FrameFormat + ChannelId + Direction)
+  const fixedPosData = useFixedPositionModeMeasurementData();
+
+  // Only display frames/messages for the selected channel
+  const fixedPosDataForChannel = useMemo(() =>
+    fixedPosData
+      .filter((data: Frame) => data.sourceId === projectData.channelId)
+      .sort((a, b) => a.properties['FIXED_MODE_SORTABLE_KEY']?.stringValue.localeCompare(b.properties['FIXED_MODE_SORTABLE_KEY']?.stringValue ?? '') ?? 0),
+    [fixedPosData, projectData.channelId]);
 
   // A callback that will get the new selected channel id and save it to the project data
   const onChannelIdentifierChange = useCallback((channelId: string) => {
@@ -55,44 +63,58 @@ function WorkspaceView() {
     setProjectData(data);
   }, [projectData, setProjectData]);
 
-  // A callback that will get the new selected CAN id and save it to the session data
-  const onCanIdentifierChange = useCallback((canId: string, canIdType: canIdentifierType) => {
-    const data = { ...sessionData };
-    data.canId = Number.parseInt(canId, numericRadix);
-    data.canIdType = canIdType;
-    setSessionData(data);
-  }, [numericRadix, sessionData, setSessionData]);
-
-  // A callback that will send out a CAN message on the selected channel with the specified CAN id
-  const onSendCanMessage = useCallback(() => {
-    if (projectData.channelId !== '') {
-      const flags = sessionData.canIdType === 'extended' ? CanFrameFlag.CAN_FRAME_FLAG_EXT : CanFrameFlag.CAN_FRAME_FLAG_STD;
-      sendCanMessage(projectData.channelId, sessionData.canId, [], flags)
-    }
-  }, [projectData.channelId, sessionData.canId, sessionData.canIdType]);
+  // A helper function to format the data bytes according to the selected numeric radix
+  const formatData = useCallback((frameData: number[]) => {
+    let res = '';
+      frameData.forEach(v => {
+        if (numericRadix === 16) {
+          res = `${res}${decimalToHex(v)} `;
+        } else {
+          res = `${res}${decimalToFixed(v, 3)} `;
+        }
+      });
+    return res;
+  }, [numericRadix]);
 
   return (
     <Box aria-label="canking-extension-view" height={'100%'} width={'100%'}>
-      <h3>Add your elements here!</h3>
-      <div>This is an example how to embed an image:</div>
-      <img src={icon} height={50}/>
-      <div style={{marginTop: 20}}>This is an example how to use the CanChannelSelectControl:</div>
+      <div style={{ marginLeft: '4px', marginRight: '4px' }}>
       <CanChannelSelectControl
         channelIdentifier={projectData.channelId}
         onChannelIdentifierChange={onChannelIdentifierChange}
         hideSectionControl
-      />
-      <div style={{marginTop: 20}}>This is an example how to use the CanIdentifierControl:</div>
-      <CanIdentifierControl
-        canIdentifier={sessionData.canId.toString(numericRadix).toUpperCase()}
-        canIdentifierType={sessionData.canIdType}
-        onCanIdentifierChange={onCanIdentifierChange}
-        hideSection
-      />
-      <div style={{marginTop: 20}}>This is an example how to use a Button to send out a CAN message:</div>
-      <Button variant="contained" size="large" onClick={onSendCanMessage}>
-        Send CAN Message
-      </Button>
+        />
+        <TableContainer>
+          <Table aria-label="fixed-position-data-table" size="small" padding="none">
+            <TableHead>
+              <TableRow>
+                <TableCell>Channel</TableCell>
+                <TableCell>Message</TableCell>
+                <TableCell>Id</TableCell>
+                <TableCell>Dir</TableCell>
+                <TableCell>Length</TableCell>
+                <TableCell>Data</TableCell>
+                <TableCell>Time</TableCell>
+                <TableCell>Delta</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {fixedPosDataForChannel.map((data: Frame) => (
+                <TableRow key={data.properties['FIXED_MODE_SORTABLE_KEY']?.stringValue ?? `${data.hashCode}`} hover>
+                  <TableCell>{data.sourceName}</TableCell>
+                  <TableCell>{data.messageName}</TableCell>
+                  <TableCell><pre style={{ margin: '0px' }}>{numericRadix === 16 ? decimalToHex(data.id!, 8) : data.id!}</pre></TableCell>
+                  <TableCell>{data.tx ? 'Tx' : 'Rx'}</TableCell>
+                  <TableCell>{data.data.length}</TableCell>
+                  <TableCell><pre style={{ margin: '0px' }}>{formatData(data.data)}</pre></TableCell>
+                  <TableCell>{data.time.toFixed(6)}</TableCell>
+                  <TableCell>{data.properties['FIXED_MODE_DELTA_TIME']?.doubleValue?.toFixed(6) ?? ''}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </div>
     </Box>
   );
 }
