@@ -18,8 +18,13 @@ If you want a scrolling trace instead, then you should use the useScrollModeMeas
 
 If you want to run this extension inside CanKing then follow these steps:
 
-1. Download the ck-fixed-pos-trace-1.0.0.tgz file from the v1.0.0 release
+1. Download the ck-fixed-pos-trace-1.1.0.tgz file from the v1.1.0 release
 2. Start CanKing and select ```More->Extensions->Install...```
 3. Select the file and click Open
 
 The 'Fixed Position Trace (krjo-ck)' view will now be available inside CanKing.
+
+## Version History
+
+- **v1.1.0** Updated for CanKing 7.4
+- **v1.0.0** Initial version for CanKing 7.3
